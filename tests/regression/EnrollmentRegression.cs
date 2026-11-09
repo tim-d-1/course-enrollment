@@ -14,7 +14,6 @@ namespace Courses.Regression;
 public class RegressionDatabase : IAsyncLifetime {
     public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder().WithImage("postgres:17.6-alpine").Build();
     public NpgsqlConnection Connection { get; private set; } = null!;
-    public long EnrollmentId;
     public async Task InitializeAsync() {
         try {
             await Container.StartAsync();
@@ -64,28 +63,31 @@ public class EnrollmentRegression : IClassFixture<RegressionDatabase> {
     private EnrollmentRequest Request(Student student, Course course) => new(Guid.NewGuid().ToString(), student.Id, course.Id);
 
     [Fact(DisplayName = "Зарахування зберігається у БД")]
+    [Trait("Category", "Smoke")]
     public void CreateEnrollment() {
         var saved = service.Enroll(Request(Student(), Course()));
-        db.EnrollmentId = saved.Id;
         Assert.Equal(EnrollmentStatus.Enrolled, saved.Status);
         Assert.Equal(50000L, saved.Prepaid);
         Assert.Equal(saved, enrollments.FindById(saved.Id));
     }
     [Fact(DisplayName = "Скасування повертає передоплату")]
+    [Trait("Category", "Smoke")]
     public void CancelEnrollment() {
-        var cancelled = service.Cancel(db.EnrollmentId);
+        var saved = service.Enroll(Request(Student(), Course()));
+        var cancelled = service.Cancel(saved.Id);
         Assert.Equal(EnrollmentStatus.Cancelled, cancelled.Status);
         Assert.Equal(cancelled.Prepaid, cancelled.Refund);
-        Assert.Equal(cancelled, enrollments.FindById(db.EnrollmentId));
+        Assert.Equal(cancelled, enrollments.FindById(saved.Id));
     }
     [Fact(DisplayName = "Картка слухача зберігає вік")]
+    [Trait("Category", "Smoke")]
     public void StudentAge() {
-        var saved = students.Create(new Student(0, "REGRESSION-STUDENT", 20, 90, false));
+        var saved = students.Create(new Student(0, $"REGRESSION-STUDENT-AGE-{Guid.NewGuid():N}", 20, 90, false));
         Assert.Equal(20, students.FindById(saved.Id)!.Age);
     }
     [Fact(DisplayName = "Картка слухача зберігає вступний бал")]
     public void StudentScore() {
-        var saved = students.Create(new Student(0, "REGRESSION-STUDENT", 25, 85, true));
+        var saved = students.Create(new Student(0, $"REGRESSION-STUDENT-SCORE-{Guid.NewGuid():N}", 25, 85, true));
         Assert.Equal(85, students.FindById(saved.Id)!.EntryScore);
     }
     [Fact(DisplayName = "Зарахування після зовнішнього дозволу")]
@@ -99,15 +101,11 @@ public class EnrollmentRegression : IClassFixture<RegressionDatabase> {
                 new EnrollmentRepository(connection), new DelayedPolicy());
             return delayed.Enroll(request);
         });
-        try {
-            await Task.Delay(50);
-            var saved = enrollments.FindEnrollments(course.Id, EnrollmentStatus.Enrolled);
-            Assert.Single(saved);
-            Assert.Equal(request.Reference, saved[0].Reference);
-            Assert.Equal(100000L, saved[0].Total);
-        } finally {
-            await operation;
-        }
+        await operation;
+        var saved = enrollments.FindEnrollments(course.Id, EnrollmentStatus.Enrolled);
+        Assert.Single(saved);
+        Assert.Equal(request.Reference, saved[0].Reference);
+        Assert.Equal(100000L, saved[0].Total);
     }
     [Fact(DisplayName = "Вибірка містить дві заявки курсу")]
     public void EnrollmentSelection() {
@@ -117,7 +115,7 @@ public class EnrollmentRegression : IClassFixture<RegressionDatabase> {
         var fixtureOrder = Environment.GetEnvironmentVariable("REGRESSION_REVERSE_FIXTURE") == "true"
             ? references.Reverse() : references.AsEnumerable();
         foreach (var reference in fixtureOrder) service.Enroll(new EnrollmentRequest(reference, Student().Id, course.Id));
-        using var command = new NpgsqlCommand("SELECT reference FROM enrollments WHERE course_id=@id", db.Connection);
+        using var command = new NpgsqlCommand("SELECT reference FROM enrollments WHERE course_id=@id ORDER BY reference", db.Connection);
         command.Parameters.AddWithValue("id", course.Id);
         using var rows = command.ExecuteReader();
         var actual = new List<string>();
@@ -125,6 +123,7 @@ public class EnrollmentRegression : IClassFixture<RegressionDatabase> {
         Assert.Equal(references, actual);
     }
     [Fact(DisplayName = "Завершення зберігає стан заявки")]
+    [Trait("Category", "Smoke")]
     public void Completion() {
         var saved = service.Enroll(Request(Student(), Course()));
         var completed = service.Complete(saved.Id);
