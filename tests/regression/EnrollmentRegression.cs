@@ -82,12 +82,12 @@ public class EnrollmentRegression : IClassFixture<RegressionDatabase> {
     [Fact(DisplayName = "Картка слухача зберігає вік")]
     [Trait("Category", "Smoke")]
     public void StudentAge() {
-        var saved = students.Create(new Student(0, $"REGRESSION-STUDENT-AGE-{Guid.NewGuid():N}", 20, 90, false));
+        var saved = students.Create(new Student(0, $"ST-AGE-{Guid.NewGuid():N}"[..25], 20, 90, false));
         Assert.Equal(20, students.FindById(saved.Id)!.Age);
     }
     [Fact(DisplayName = "Картка слухача зберігає вступний бал")]
     public void StudentScore() {
-        var saved = students.Create(new Student(0, $"REGRESSION-STUDENT-SCORE-{Guid.NewGuid():N}", 25, 85, true));
+        var saved = students.Create(new Student(0, $"ST-SCORE-{Guid.NewGuid():N}"[..25], 25, 85, true));
         Assert.Equal(85, students.FindById(saved.Id)!.EntryScore);
     }
     [Fact(DisplayName = "Зарахування після зовнішнього дозволу")]
