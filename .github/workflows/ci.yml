@@ -1,0 +1,113 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build Application and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: |
+          dotnet restore Courses.csproj
+          dotnet restore tests/Courses.Tests.csproj
+          dotnet restore tests/regression/Courses.Regression.csproj
+
+      - name: Build Projects
+        run: |
+          dotnet build Courses.csproj --configuration Release --no-restore
+          dotnet build tests/Courses.Tests.csproj --configuration Release --no-restore
+          dotnet build tests/regression/Courses.Regression.csproj --configuration Release --no-restore
+
+  unit-tests:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Start Database
+        run: |
+          docker compose up -d
+          until docker compose exec -T postgres pg_isready -U courses_student; do
+            sleep 1
+          done
+
+      - name: Run Unit Tests
+        env:
+          DB_PASSWORD: secret
+        run: >-
+          dotnet test tests/Courses.Tests.csproj
+          --filter "FullyQualifiedName~EnrollmentIntegrationTests"
+          --configuration Release
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory TestResults
+
+      - name: Upload Unit Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: TestResults/unit-tests.trx
+
+  integration-and-api-tests:
+    name: Integration and API Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Start Database
+        run: |
+          docker compose up -d
+          until docker compose exec -T postgres pg_isready -U courses_student; do
+            sleep 1
+          done
+
+      - name: Run API Tests
+        env:
+          DB_PASSWORD: secret
+        run: >-
+          dotnet test tests/Courses.Tests.csproj
+          --filter "FullyQualifiedName~CoursesApiTests"
+          --configuration Release
+          --logger "trx;LogFileName=api-tests.trx"
+          --results-directory TestResults
+
+      - name: Run Regression Tests
+        run: >-
+          dotnet test tests/regression/Courses.Regression.csproj
+          --configuration Release
+          --logger "trx;LogFileName=regression-tests.trx"
+          --results-directory TestResults
+
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-and-api-test-results
+          path: TestResults/*.trx
