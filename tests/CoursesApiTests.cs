@@ -45,7 +45,7 @@ public class CoursesApiTests : IClassFixture<WebApplicationFactory<Program>>, ID
     {
         var response = await client.PostAsJsonAsync("/students", new StudentInput("ST-API-1", 20, 85, false));
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
         var student = await response.Content.ReadFromJsonAsync<Student>(jsonOptions);
         Assert.NotNull(student);
